@@ -1,43 +1,23 @@
-# Quasar App (chat-app)
+# ChatZone
 
-Basic chat application UI prototype
+ChatZone is a simple chat application prototype built with the Quasar Framework (Vue.js).  
+It is created as part of the *Web Technologies* course at STU FIIT.
 
-## Install the dependencies
+This version represents Phase 1 of the semester project — a clickable, responsive user interface (UI) prototype.  
+It includes the main screens of the chat app, but no backend or real-time functionality yet.
 
-```bash
-yarn
-# or
-npm install
-```
+## Features (UI Prototype)
 
-### Start the app in development mode (hot-code reloading, error reporting, etc.)
+- Login Page – form for user login  
+- Register Page – form to create a new account  
+- Channels Page – shows a list of channels (General, STU FIIT, Random)  
+- Chat Page – simple chat conversation between *Valentin* and *Dragomir* inside each channel  
 
-```bash
-quasar dev
-```
+Each page is connected through router navigation, creating a fully clickable SPA (Single Page Application).
 
-### Lint the files
+## Technologies Used
 
-```bash
-yarn lint
-# or
-npm run lint
-```
-
-### Format the files
-
-```bash
-yarn format
-# or
-npm run format
-```
-
-### Build the app for production
-
-```bash
-quasar build
-```
-
-### Customize the configuration
-
-See [Configuring quasar.config.js](https://v2.quasar.dev/quasar-cli-vite/quasar-config-js).
+- Framework: Quasar (Vue.js)  
+- Language: JavaScript  
+- Architecture: Single Page Application (SPA)  
+- Design: Material Design components (Quasar UI)
