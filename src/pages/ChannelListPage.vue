@@ -13,7 +13,7 @@ const newInviteChannels = computed(() => {
   )
 })
 
-// Компютъд за обикновени канали
+// Компютъд за обикновени каналии
 const regularChannels = computed(() => {
   return store.getUserChannels.filter(channel => 
     !store.userInvites.has(channel.id) && !channel.isNewInvite
@@ -85,11 +85,8 @@ function goToChannel(channelId) {
   }
 }
 
-// 🆕 TEST функция за General канал
-function testGeneralNavigation() {
-  console.log('🧪 TEST: Attempting to navigate to General channel (ID: 1)')
-  goToChannel(1)
-}
+
+
 
 // Обработка на действия с канали (leave/delete)
 function handleChannelAction(channel) {
@@ -373,12 +370,7 @@ onMounted(() => {
       />
       
       <!-- 🆕 TEST Navigation бутон -->
-      <q-btn 
-        label="TEST General" 
-        color="red" 
-        icon="play_arrow"
-        @click="testGeneralNavigation"
-      />
+
     </div>
 
     <!-- Информация -->
