@@ -40,6 +40,11 @@ It is created as part of the *Web Technologies* course at STU FIIT.
 - `/cancel` - Leave or delete channels
 - `/list` - View channel members
 
+## 🏗️ System Architecture
+
+![UML Class Diagram](./UML_Diagram_ChatApp_Valentin_Kitsonov_Dragomir_Venkov.jpeg)
+*Diagram created by Valentin Kitsonov and Dragomir Venkov*
+
 ## 🛠 Technologies Used
 
 - **Framework**: Quasar (Vue.js 3)
