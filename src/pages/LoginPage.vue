@@ -41,7 +41,7 @@
         flat
         label="🎯 GO TO CHANNELS (TEST)"
         color="secondary"
-        @click="router.push('/channels')"
+        @click="goToChannels"
         class="full-width q-mb-sm"
       />
 
@@ -67,6 +67,8 @@ const email = ref('')
 const password = ref('')
 
 function handleLogin() {
+  console.log('Sign In clicked') // Тест
+  
   if (!email.value || !password.value) {
     $q.notify({
       type: 'negative',
@@ -76,20 +78,19 @@ function handleLogin() {
     return
   }
 
-  // Временен логин - винаги успешен за тестване
-  $q.notify({
-    type: 'positive',
-    message: 'Login successful!',
-    timeout: 1500
-  })
-
+  console.log('Login successful, redirecting...') // Тест
+  
   // Отиди директно към каналите след логин
-  setTimeout(() => {
-    router.push('/channels')
-  }, 1000)
+  router.push('/channels')
+}
+
+function goToChannels() {
+  console.log('Go to Channels clicked') // Тест
+  router.push('/channels')
 }
 
 function goToRegister() {
+  console.log('Create Account clicked') // Тест
   router.push('/register')
 }
 </script>
