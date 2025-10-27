@@ -81,4 +81,5 @@ It demonstrates advanced frontend development concepts including:
 - Message reactions and threads
 
 **Note**: This is a frontend prototype with simulated real-time functionality. All data is stored in-memory and resets on page refresh.
+
 *Project developed by Valentin Kitsonov and Dragomir Venkov*
