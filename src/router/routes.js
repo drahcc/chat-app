@@ -14,7 +14,7 @@ const routes = [
       {
         path: 'channels',
         component: () => import('pages/ChannelListPage.vue')
-      },
+      },  
       {
         path: 'chat/:channelId',
         component: () => import('pages/ChatPage.vue'),
