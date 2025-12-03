@@ -1,3 +1,15 @@
+import { onMounted } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+onMounted(() => {
+  console.log('💬 ChatPage mounted with channelId:', route.params.channelId)
+  const channelId = route.params.channelId
+  if (channelId) {
+    selectChannel(parseInt(channelId))
+  }
+})
 <template>
   <q-page class="row">
     <!-- Sidebar с канали (ляво) -->
