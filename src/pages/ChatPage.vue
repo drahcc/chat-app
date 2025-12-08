@@ -10,146 +10,216 @@
 
     <!-- MESSAGES -->
     <div class="col scroll q-pa-md">
-      <div
-        v-for="(msg, i) in messages"
-        :key="i"
-        class="q-pa-sm q-mb-sm rounded bg-grey-8 text-white"
-      >
-        <div class="text-bold">{{ msg.user }}</div>
-        <div>{{ msg.text }}</div>
-        <div class="text-grey-5 text-caption">{{ msg.time }}</div>
+      <div v-for="(msg, i) in messages" :key="msg.id || i" class="q-pa-sm q-mb-sm rounded bg-grey-8 text-white">
+        <div class="text-bold">
+          {{ msg.user?.nickname || msg.user?.email || `User #${msg.user_id}` }}
+        </div>
+        <div>{{ msg.content }}</div>
+        <div class="text-grey-5 text-caption">{{ formatTime(msg.created_at) }}</div>
       </div>
 
-      <!-- TYPING -->
       <div v-if="typingUsers.length" class="text-grey-5 q-mt-sm">
-        {{ typingUsers.join(", ") }} typing...
+        {{ typingUsers.join(', ') }} typing...
       </div>
     </div>
 
     <!-- INPUT -->
     <div class="row q-pa-sm bg-grey-9">
-      <q-input
-        v-model="newMessage"
-        filled
-        class="col"
-        placeholder="Type message..."
-        @keydown="onTyping"
-        @keyup.enter="sendMessage"
-      />
-
-      <q-btn
-        class="q-ml-sm"
-        color="primary"
-        label="Send"
-        @click="sendMessage"
-      />
+      <q-input v-model="newMessage" filled class="col" placeholder="Type message..."
+        @keydown="onTyping" @keyup.enter="sendMessage" />
+      <q-btn class="q-ml-sm" color="primary" label="Send" @click="sendMessage" />
     </div>
 
   </q-page>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { useRoute } from "vue-router";
 import { useChannelsStore } from "src/stores/channelsStore";
-import { wsSend, wsEvents } from "src/boot/ws";
+import { useAuthStore } from "src/stores/authStore";
+import { joinChannel, wsEvents, wsSend } from "src/boot/ws";
+import { api } from "src/boot/axios";
 
+const route = useRoute();
 const channelsStore = useChannelsStore();
+const authStore = useAuthStore();
 
-// STATE ---------------------------------------------------------------
 const newMessage = ref("");
 const typingUsers = ref([]);
 const messages = ref([]);
 const currentChannelId = ref(null);
 
-// AUTO SELECT FIRST CHANNEL -------------------------------------------
-onMounted(() => {
-  if (channelsStore.channels.length) {
-    currentChannelId.value = channelsStore.channels[0].id;
-  }
-});
-
-// COMPUTED CURRENT CHANNEL --------------------------------------------
 const currentChannel = computed(() =>
-  channelsStore.channels.find((c) => c.id === currentChannelId.value)
+  channelsStore.channels.find((c) => c.id == currentChannelId.value)
 );
 
-// LOAD messages when channel changes ----------------------------------
-watch(currentChannelId, () => {
-  messages.value = []; // clear old messages
-});
+const currentUser = computed(() => authStore.user);
 
-// WEBSOCKET LISTENERS -------------------------------------------------
-
-function onMessage(msg) {
-  if (msg.channel_id !== currentChannelId.value) return;
-  messages.value.push(msg);
-}
-
-function onTypingEvent(data) {
-  const { channel_id, user, stop } = data;
-  if (channel_id !== currentChannelId.value) return;
-
-  if (stop) {
-    typingUsers.value = typingUsers.value.filter((u) => u !== user);
-  } else {
-    if (!typingUsers.value.includes(user)) typingUsers.value.push(user);
+onMounted(async () => {
+  // Get channel ID from route params
+  const paramId = route.params.channelId;
+  
+  if (paramId) {
+    currentChannelId.value = parseInt(paramId);
+    
+    // Load channel if not in store
+    if (!currentChannel.value) {
+      await channelsStore.loadChannels();
+    }
+    
+    if (currentChannelId.value) {
+      // First join channel, THEN load messages
+      await joinChannel(currentChannelId.value);
+      await loadMessages(currentChannelId.value);
+    }
+  } else if (channelsStore.channels.length) {
+    currentChannelId.value = channelsStore.channels[0].id;
+    await joinChannel(currentChannelId.value);
+    await loadMessages(currentChannelId.value);
   }
-}
 
-// REGISTER LISTENERS
-onMounted(() => {
+  // Listen to WebSocket events
   wsEvents.on("message", onMessage);
   wsEvents.on("typing", onTypingEvent);
 });
 
-// REMOVE LISTENERS
+watch(currentChannelId, async (id) => {
+  if (id) {
+    messages.value = [];
+    await joinChannel(id);
+    await loadMessages(id);
+  }
+});
+
+async function loadMessages(channelId) {
+  try {
+    const res = await api.get(`/channels/${channelId}/messages`);
+    console.log('📥 API Response:', res.data);
+    
+    // Response is paginated: { data: [...], meta: {...} }
+    let msgs = res.data?.data || res.data || [];
+    
+    // Ensure it's an array
+    if (!Array.isArray(msgs)) {
+      console.error('Messages is not an array:', msgs);
+      msgs = [];
+    }
+    
+    // Reverse because API returns DESC order
+    messages.value = msgs.reverse();
+  } catch (err) {
+    const apiError = err?.response?.data?.error || '';
+    console.error('Failed to load messages:', apiError || err);
+
+    // Auto-join channel if backend says "not a member"
+    if (typeof apiError === 'string' && apiError.toLowerCase().includes('not a member')) {
+      try {
+        console.warn(`Auto-joining channel ${channelId}...`);
+        await api.post(`/channels/${channelId}/join`);
+        const retry = await api.get(`/channels/${channelId}/messages`);
+        let msgs = retry.data?.data || retry.data || [];
+        if (!Array.isArray(msgs)) msgs = [];
+        messages.value = msgs.reverse();
+        return;
+      } catch (joinErr) {
+        console.error('Join channel failed:', joinErr?.response?.data || joinErr);
+      }
+    }
+
+    messages.value = [];
+  }
+}
+
+function formatTime(ts) {
+  try {
+    return new Date(ts).toLocaleTimeString()
+  } catch {
+    return ''
+  }
+}
+
+function onMessage(msg) {
+  console.log('📩 Received message:', msg);
+  console.log('   Current channel:', currentChannelId.value);
+  console.log('   Message channel:', msg.channel_id);
+  
+  if (msg.channel_id != currentChannelId.value) {
+    console.warn('   ⚠️ Message for different channel, ignoring');
+    return;
+  }
+  
+  console.log('   ✅ Adding to messages array');
+  messages.value.push(msg);
+}
+
+function onTypingEvent(data) {
+  if (data.channel_id !== currentChannelId.value) return;
+
+  if (data.stop) {
+    typingUsers.value = typingUsers.value.filter(
+      (u) => u !== data.username
+    );
+  } else {
+    if (!typingUsers.value.includes(data.username)) {
+      typingUsers.value.push(data.username);
+    }
+  }
+}
+
 onBeforeUnmount(() => {
   wsEvents.off("message", onMessage);
   wsEvents.off("typing", onTypingEvent);
 });
 
-// SEND MESSAGE ---------------------------------------------------------
 function sendMessage() {
-  if (!newMessage.value.trim() || !currentChannel.value) return;
+  if (!newMessage.value.trim() || !currentChannelId.value) return;
+  if (!currentUser.value || !currentUser.value.id) {
+    console.error('No user logged in');
+    return;
+  }
+
+  console.log('📤 SENDING MESSAGE as user:', {
+    id: currentUser.value.id,
+    nickname: currentUser.value.nickname,
+    email: currentUser.value.email
+  });
 
   wsSend("message", {
     channel_id: currentChannelId.value,
-    user: channelsStore.currentUser,
-    text: newMessage.value.trim(),
-    time: new Date().toLocaleTimeString()
+    user_id: currentUser.value.id,
+    content: newMessage.value.trim(),
+    created_at: new Date().toISOString(),
   });
 
   newMessage.value = "";
 }
 
-// TYPING INDICATOR ------------------------------------------------------
-let typingTimeout = null;
+let timeout = null;
 
 function onTyping() {
-  if (!currentChannel.value) return;
+  if (!currentChannelId.value || !currentUser.value) return;
 
   wsSend("typing", {
     channel_id: currentChannelId.value,
-    user: channelsStore.currentUser
+    user_id: currentUser.value.id,
+    username: currentUser.value.username || currentUser.value.nickname,
   });
 
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
+  clearTimeout(timeout);
+  timeout = setTimeout(() => {
     wsSend("typing", {
       channel_id: currentChannelId.value,
-      user: channelsStore.currentUser,
-      stop: true
+      user_id: currentUser.value.id,
+      username: currentUser.value.username || currentUser.value.nickname,
+      stop: true,
     });
-  }, 700);
+  }, 600);
 }
 </script>
 
+
 <style>
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-thumb {
-  background: #444;
-  border-radius: 10px;
-}
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
 </style>

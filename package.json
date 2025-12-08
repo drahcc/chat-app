@@ -15,9 +15,12 @@
     "postinstall": "quasar prepare"
   },
   "dependencies": {
+    "@adonisjs/websocket-client": "^1.0.9",
     "@quasar/extras": "^1.16.4",
     "axios": "^1.13.2",
     "quasar": "^2.16.0",
+    "regenerator-runtime": "^0.14.1",
+    "socket.io-client": "^4.8.1",
     "vue": "^3.5.22",
     "vue-router": "^4.0.0"
   },

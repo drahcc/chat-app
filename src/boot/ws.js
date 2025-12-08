@@ -1,73 +1,73 @@
-// src/boot/ws.js
+import 'regenerator-runtime/runtime'
 import { boot } from 'quasar/wrappers'
 import mitt from 'mitt'
+import Ws from '@adonisjs/websocket-client'
 
 export const wsEvents = mitt()
 
 let ws = null
-let connected = false
+let channelMap = {}
 
-export default boot(async () => {
-  ws = new WebSocket('ws://127.0.0.1:3333/adonis-ws')
+// INIT WEBSOCKET -------------------------------------------------------
+export default boot(() => {
+  ws = Ws('ws://127.0.0.1:3333')
+  ws.connect()
 
-  ws.onopen = () => {
-    connected = true
+  ws.on('open', () => {
     console.log('%c[WS] Connected', 'color: lightgreen')
-  }
+  })
 
-  ws.onclose = () => {
-    connected = false
+  ws.on('close', () => {
     console.warn('[WS] Disconnected')
-  }
-
-  ws.onerror = (err) => {
-    console.error('[WS] Error:', err)
-  }
-
-  ws.onmessage = (event) => {
-    let packet
-    try {
-      packet = JSON.parse(event.data)
-    } catch {
-      return
-    }
-
-    // Adonis protocol → t(ype), d(ata)
-    if (packet.t === 7 && packet.d?.event) {
-      wsEvents.emit(packet.d.event, packet.d.data)
-      return
-    }
-
-    // fallback simple event
-    if (packet.event) {
-      wsEvents.emit(packet.event, packet.data)
-    }
-  }
+  })
 })
 
-
-// SEND TO ADONIS CHANNEL -----------------------------------------------
-export function wsSend(event, data = {}) {
-  if (!connected) {
-    console.warn('WS not ready')
-    return
+// JOIN A CHANNEL -------------------------------------------------------
+export function joinChannel(channelId) {
+  if (!ws) {
+    console.warn('[WS] joinChannel called but ws not initialized yet')
+    return null
   }
 
+  const topicName = `chat:${channelId}`
+
+  if (channelMap[topicName]) {
+    console.log(`✅ [WS] Already subscribed to ${topicName}`)
+    return channelMap[topicName]
+  }
+
+  console.log(`🔌 [WS] Subscribing to ${topicName}...`)
+  const topic = ws.subscribe(topicName)
+
+  topic.on('message', data => {
+    console.log(`📨 [WS] Received on ${topicName}:`, data)
+    wsEvents.emit('message', data)
+  })
+  topic.on('typing', data => wsEvents.emit('typing', data))
+  topic.on('join', data => wsEvents.emit('join', data))
+  topic.on('leave', data => wsEvents.emit('leave', data))
+
+  channelMap[topicName] = topic
+  console.log(`✅ [WS] Subscribed to ${topicName}`)
+  return topic
+}
+
+// SEND EVENT TO CHANNEL ------------------------------------------------
+export function wsSend(event, data) {
   if (!data.channel_id) {
-    console.error("wsSend requires data.channel_id")
+    console.error("wsSend: Missing channel_id")
     return
   }
 
-  const topic = `chat:${data.channel_id}`
+  const topicName = `chat:${data.channel_id}`
+  const topic = channelMap[topicName]
 
-  const packet = {
-    t: 7,
-    d: {
-      topic,
-      event,
-      data
-    }
+  if (!topic) {
+    console.warn("wsSend: Topic not joined:", topicName)
+    console.warn("Available topics:", Object.keys(channelMap))
+    return
   }
 
-  ws.send(JSON.stringify(packet))
+  console.log(`🔌 [WS] Sending "${event}" to ${topicName}:`, data)
+  topic.emit(event, data)
 }

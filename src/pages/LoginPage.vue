@@ -88,12 +88,13 @@ async function handleLogin() {
 
   const result = await authStore.loginUser(email.value, password.value)
 
-  if (result.success) {
-    successUsername.value = result.user.username
+  // ✔️ безопасна проверка
+  if (result.success && result.user) {
+    successUsername.value = result.user.username || 'User'
     showSuccess.value = true
   } else {
     showError.value = true
-    errorMessage.value = result.error
+    errorMessage.value = result.error || 'Unknown login error'
   }
 
   loading.value = false

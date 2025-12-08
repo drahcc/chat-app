@@ -17,8 +17,6 @@
 
     <!-- CHANNEL LIST -->
     <q-list bordered separator>
-
-      <!-- Channels Loop -->
       <q-item
         v-for="channel in store.getUserChannels"
         :key="channel.id"
@@ -49,14 +47,56 @@
         </q-item-section>
       </q-item>
 
-      <!-- NO CHANNELS -->
       <q-item v-if="store.getUserChannels.length === 0">
         <q-item-section class="text-center text-grey q-pa-xl">
           <q-icon name="tag" size="xl" class="q-mb-md" />
           <div>Нямаш налични канали.</div>
         </q-item-section>
       </q-item>
+    </q-list>
 
+    <!-- PUBLIC CHANNELS -->
+    <div class="text-h6 text-secondary q-mb-sm q-mt-xl">
+      🌐 Public Channels
+    </div>
+
+    <q-list bordered separator>
+      <q-item
+        v-for="channel in availablePublicChannels"
+        :key="channel.id"
+        clickable
+        v-ripple
+      >
+        <q-item-section avatar>
+          <q-icon name="public" color="secondary" />
+        </q-item-section>
+
+        <q-item-section>
+          <q-item-label class="text-weight-bold">
+            # {{ channel.name }}
+          </q-item-label>
+          <q-item-label caption v-if="channel.description">
+            {{ channel.description }}
+          </q-item-label>
+        </q-item-section>
+
+        <q-item-section side>
+          <q-btn
+            flat
+            color="positive"
+            label="Join"
+            @click.stop="joinPublicChannel(channel.id)"
+          >
+            <q-tooltip>Join this channel</q-tooltip>
+          </q-btn>
+        </q-item-section>
+      </q-item>
+
+      <q-item v-if="availablePublicChannels.length === 0">
+        <q-item-section class="text-center text-grey q-pa-md">
+          <div>No public channels available</div>
+        </q-item-section>
+      </q-item>
     </q-list>
 
     <!-- BUTTONS -->
@@ -117,35 +157,115 @@
         icon="bug_report"
         @click="testNav"
       />
-
     </div>
 
   </q-page>
 </template>
 
 <script setup>
+import { ref, computed, onMounted } from 'vue'
 import { useChannelsStore } from 'src/stores/channelsStore'
 import { useRouter } from 'vue-router'
+import { useQuasar } from 'quasar'
+import { api } from 'src/boot/axios'
 
 const store = useChannelsStore()
 const router = useRouter()
+const $q = useQuasar()
+
+const allChannels = ref([])
+
+const availablePublicChannels = computed(() => {
+  const userChannelIds = store.getUserChannels.map(c => c.id)
+  return allChannels.value.filter(c => 
+    c.type === 'public' && !userChannelIds.includes(c.id)
+  )
+})
+
+onMounted(async () => {
+  await store.loadChannels()
+  await loadAllChannels()
+})
+
+async function loadAllChannels() {
+  try {
+    const res = await api.get('/channels')
+    allChannels.value = res.data || []
+  } catch (err) {
+    console.error('Failed to load all channels:', err)
+  }
+}
+
+async function joinPublicChannel(channelId) {
+  try {
+    await api.post(`/channels/${channelId}/join`)
+    $q.notify({ type: 'positive', message: 'Joined channel successfully!' })
+    await store.loadChannels()
+    await loadAllChannels()
+    goToChannel(channelId)
+  } catch {
+    $q.notify({ type: 'negative', message: 'Failed to join channel' })
+  }
+}
 
 function goToChannel(id) {
   router.push(`/chat/${id}`)
 }
 
-function createPublicChannel() {
-  const name = prompt("Enter channel name:")
-  if (!name) return
-  const channel = store.createChannel(name, "public")
-  goToChannel(channel.id)
+async function createPublicChannel() {
+  $q.dialog({
+    title: 'Create Public Channel',
+    message: 'Enter channel name:',
+    prompt: {
+      model: '',
+      type: 'text'
+    },
+    cancel: true,
+    persistent: true
+  }).onOk(async (name) => {
+    if (!name || !name.trim()) {
+      return
+    }
+
+    const res = await store.createChannel(name.trim(), 'public')
+
+    if (res && res.error) {
+      $q.notify({ type: 'negative', message: res.error || 'Create failed' })
+      return
+    }
+
+    if (res.channel && res.channel.id) {
+      goToChannel(res.channel.id)
+    }
+  })
 }
 
-function createPrivateChannel() {
-  const name = prompt("Enter channel name:")
-  if (!name) return
-  const channel = store.createChannel(name, "private")
-  goToChannel(channel.id)
+async function createPrivateChannel() {
+  $q.dialog({
+    title: 'Create Private Channel',
+    message: 'Enter channel name:',
+    prompt: {
+      model: '',
+      type: 'text'
+    },
+    cancel: true,
+    persistent: true
+  }).onOk(async (name) => {
+    if (!name || !name.trim()) {
+      return
+    }
+
+    const res = await store.createChannel(name.trim(), 'private')
+
+    if (res && res.error) {
+      $q.notify({ type: 'negative', message: res.error || 'Create failed' })
+      return
+    }
+
+    if (res.channel && res.channel.id) {
+      goToChannel(res.channel.id)
+    }
+  })
 }
 
 function leave(id) {
@@ -153,7 +273,7 @@ function leave(id) {
 }
 
 function testInvite() {
-  alert("Invite test triggered")
+  $q.notify({ type: 'info', message: 'Invite test triggered' })
 }
 
 function createOld() {
@@ -165,7 +285,7 @@ function cleanup() {
 }
 
 function checkActivity() {
-  alert("Checked channel activity")
+  $q.notify({ type: 'info', message: 'Checked channel activity' })
 }
 
 function goDirect() {
