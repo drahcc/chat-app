@@ -168,22 +168,35 @@ export const useChannelsStore = defineStore('channels', {
     async createTestInactiveChannels() {
       const names = ['old-archive-1', 'old-archive-2', 'old-archive-3']
       const results = []
+      // Set last_message_at to 32 days ago
+      const oldDate = new Date()
+      oldDate.setDate(oldDate.getDate() - 32)
+      
       for (const name of names) {
         const res = await this.createChannel(name, 'public')
+        if (res.channel && res.channel.id) {
+          try {
+            // Update last_message_at to old date
+            await api.patch(`/channels/${res.channel.id}`, {
+              last_message_at: oldDate.toISOString()
+            })
+          } catch (err) {
+            console.error('Failed to set old date:', err)
+          }
+        }
         results.push(res)
       }
       return results
     },
 
     async manualCleanup() {
-      // Leave channels that look like test/old ones
-      const targets = this.channels.filter(c => /^(old-|archive|test-)/i.test(c.name))
-      const outcomes = []
-      for (const chan of targets) {
-        const res = await this.leaveChannel(chan.id)
-        outcomes.push({ id: chan.id, name: chan.name, ...res })
+      try {
+        const res = await api.post('/channels/cleanup')
+        return res.data
+      } catch (err) {
+        console.error('manualCleanup error', err?.response?.data || err)
+        throw err
       }
-      return outcomes
     },
 
     async fetchActivitySnapshot(limitPerChannel = 1) {

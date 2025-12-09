@@ -3,21 +3,37 @@
 
     <!-- HEADER -->
     <div class="row items-center justify-between q-pa-sm bg-grey-9">
-      <div class="text-h6 text-white">
-        {{ currentChannel ? currentChannel.name : "Select a Channel" }}
+      <div class="row items-center q-gutter-sm header-actions">
+        <div class="text-h6 text-white">
+          {{ currentChannel ? currentChannel.name : "Select a Channel" }}
+        </div>
       </div>
       
       <!-- SETTINGS MENU -->
       <div class="row items-center q-gutter-sm">
-        <q-btn flat round icon="settings" color="white" @click="settingsMenuOpen = !settingsMenuOpen" />
-        <q-menu v-model="settingsMenuOpen" anchor="bottom right" self="top right">
+        <q-btn flat round icon="settings" color="white" @click.stop="settingsMenuOpen = !settingsMenuOpen" />
+        <q-menu
+          v-model="settingsMenuOpen"
+          anchor="bottom right"
+          self="top right"
+          :offset="[0, 6]"
+          content-class="header-menu"
+          transition-show="jump-down"
+          transition-hide="jump-up"
+        >
           <q-list style="min-width: 200px">
+            <q-item clickable v-close-popup @click="showSearch = true">
+              <q-item-section>Search messages</q-item-section>
+            </q-item>
+            <q-separator />
             <q-item clickable v-close-popup @click="notificationSettingsOpen = true">
               <q-item-section>Notification Settings</q-item-section>
             </q-item>
             <q-separator />
             <q-item clickable v-close-popup>
-              <q-item-section>{{ currentUser ? `Logged in as: ${currentUser.nickname}` : 'Not logged in' }}</q-item-section>
+              <q-item-section>
+                Logged in as: {{ currentUser?.nickname || currentUser?.username || currentUser?.email || 'Guest' }}
+              </q-item-section>
             </q-item>
           </q-list>
         </q-menu>
@@ -78,18 +94,27 @@
       <div v-if="isLoadingOlder" class="text-grey-5 text-center q-mb-sm">
         <q-spinner size="20px" color="primary" class="q-mr-sm" /> Loading older...
       </div>
-      <div v-for="(msg, i) in messages" :key="msg.id || i" class="q-pa-sm q-mb-sm rounded" :class="isMentioned(msg) ? 'bg-yellow-1' : 'bg-grey-8'" :style="isMentioned(msg) ? 'border-left: 4px solid #ffc107' : ''">
-        <div class="text-bold row items-center q-gutter-xs">
-          <q-icon 
-            :name="getUserStatusIcon(msg.user_id)" 
-            :color="getUserStatusColor(msg.user_id)" 
-            size="xs"
-          />
-          <span>{{ msg.user?.nickname || msg.user?.email || `User #${msg.user_id}` }}</span>
-        </div>
-        <div class="text-white" v-html="formatMessageWithMentions(msg.content)"></div>
-        <div class="text-grey-5 text-caption">{{ formatTime(msg.created_at) }}</div>
+      
+      <!-- Pinned Messages Bar -->
+      <PinnedMessages v-if="currentChannelId" :channel-id="currentChannelId" @jump-to-message="jumpToMessage" />
+
+      <div v-if="showSearch" class="bg-grey-9 q-pa-sm">
+        <MessageSearch 
+          v-if="currentChannelId"
+          :channel-id="currentChannelId"
+          @close="showSearch = false"
+          @jump-to-message="jumpToMessage"
+        />
       </div>
+
+      <!-- Messages with New Component -->
+      <MessageItem 
+        v-for="(msg, i) in messages" 
+        :key="msg.id || i" 
+        :message="msg"
+        :channel-id="currentChannelId"
+        :is-admin="isChannelAdmin"
+      />
 
       <div v-if="typingUsers.length" class="text-grey-5 q-mt-sm">
         <span v-for="(user, index) in typingUsers" :key="user">
@@ -109,9 +134,62 @@
     </div>
 
     <!-- INPUT (fixed at bottom) -->
-    <div class="row q-pa-sm bg-grey-9" style="flex-shrink: 0; position: sticky; bottom: 0;">
-      <q-input v-model="newMessage" filled class="col" placeholder="Type message..."
-        @keydown="onTyping" @keyup.enter="sendMessage" />
+    <div class="row q-pa-sm bg-grey-9 items-center" style="flex-shrink: 0; position: sticky; bottom: 0;">
+      <!-- File Attach Button -->
+      <q-btn
+        flat
+        round
+        dense
+        icon="attach_file"
+        color="grey-6"
+        @click="$refs.fileInput.click()"
+        title="Attach file"
+      />
+      <input 
+        ref="fileInput" 
+        type="file" 
+        multiple 
+        accept="image/*,application/pdf,.doc,.docx" 
+        style="display: none" 
+        @change="handleFileSelect"
+      />
+      
+      <!-- Emoji Picker Button -->
+      <q-btn
+        flat
+        round
+        dense
+        icon="emoji_emotions"
+        color="grey-6"
+        title="Add emoji"
+      >
+        <q-popup-proxy cover transition-show="jump-down" transition-hide="jump-up">
+          <div class="q-pa-md" style="width: 300px">
+            <div class="text-h6 q-mb-md">Add Emoji</div>
+            <div class="row q-gutter-sm flex-wrap">
+              <q-btn
+                v-for="emoji in commonEmojis"
+                :key="emoji"
+                flat
+                round
+                :label="emoji"
+                v-close-popup
+                @click="insertEmoji(emoji)"
+                style="font-size: 1.5em; min-width: 50px"
+              />
+            </div>
+          </div>
+        </q-popup-proxy>
+      </q-btn>
+      
+      <q-input 
+        v-model="newMessage" 
+        filled 
+        class="col q-ml-sm" 
+        placeholder="Type message..."
+        @keydown="onTyping" 
+        @keyup.enter="sendMessage" 
+      />
       <q-btn class="q-ml-sm" color="primary" label="Send" @click="sendMessage" />
     </div>
 
@@ -123,16 +201,22 @@ import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { useChannelsStore } from "src/stores/channelsStore";
 import { useAuthStore } from "src/stores/authStore";
+import { useChatStore } from "src/stores/chatStore";
 import { joinChannel, wsEvents, wsSend } from "src/boot/ws";
 import { api } from "src/boot/axios";
+import MessageItem from "src/components/MessageItem.vue";
+import MessageSearch from "src/components/MessageSearch.vue";
+import PinnedMessages from "src/components/PinnedMessages.vue";
 
 const route = useRoute();
 const router = useRouter();
 const channelsStore = useChannelsStore();
 const authStore = useAuthStore();
+const chatStore = useChatStore();
 
 const messagesContainer = ref(null);
 const messagesEnd = ref(null);
+const fileInput = ref(null);
 const newMessage = ref("");
 const typingUsers = ref([]);
 const typingData = ref({}); // Store typing data: username -> {message, timestamp}
@@ -147,6 +231,10 @@ const isLoadingOlder = ref(false);
 const settingsMenuOpen = ref(false);
 const notificationSettingsOpen = ref(false);
 const notificationPreference = ref('all');
+const showSearch = ref(false);
+const isChannelAdmin = ref(false);
+const showEmojiPicker = ref(false);
+const commonEmojis = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '👎', '❤️', '🔥', '🎉', '😢', '😡', '🙏', '💯', '✨'];
 
 const currentChannel = computed(() =>
   channelsStore.channels.find((c) => c.id == currentChannelId.value)
@@ -277,53 +365,12 @@ async function loadMessages(channelId, page = 1, prepend = false) {
   }
 }
 
-function formatTime(ts) {
-  try {
-    return new Date(ts).toLocaleTimeString()
-  } catch {
-    return ''
-  }
-}
-
-function getUserStatusIcon(userId) {
-  if (!userId) return 'circle'
-  const status = channelsStore.getUserStatus(userId)
-  switch (status) {
-    case 'online': return 'circle'
-    case 'dnd': return 'do_not_disturb'
-    case 'offline': return 'circle'
-    default: return 'circle'
-  }
-}
-
-function getUserStatusColor(userId) {
-  if (!userId) return 'grey'
-  const status = channelsStore.getUserStatus(userId)
-  switch (status) {
-    case 'online': return 'green'
-    case 'dnd': return 'orange'
-    case 'offline': return 'grey'
-    default: return 'grey'
-  }
-}
-
 function scrollToBottom() {
   setTimeout(() => {
     if (messagesContainer.value) {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
     }
   }, 100);
-}
-
-function isMentioned(msg) {
-  // Highlight if current user is mentioned
-  return msg.mentioned_user_id === currentUser.value?.id
-}
-
-function formatMessageWithMentions(content) {
-  if (!content) return ''
-  // Replace @username with highlighted version
-  return content.replace(/@(\w+)/g, '<span style="background-color: #ff9800; padding: 2px 6px; border-radius: 3px; font-weight: bold;">@$1</span>')
 }
 
 function onMessage(msg) {
@@ -335,7 +382,14 @@ function onMessage(msg) {
     console.warn('   ⚠️ Message for different channel, ignoring');
     return;
   }
-  
+
+  const existing = msg.id && messages.value.find(m => m.id === msg.id);
+  if (existing) {
+    Object.assign(existing, msg);
+    console.log('   🔁 Message already exists, merged updates');
+    return;
+  }
+
   console.log('   ✅ Adding to messages array');
   messages.value.push(msg);
   scrollToBottom();
@@ -457,6 +511,8 @@ async function sendMessage() {
       content: text,
       created_at: new Date().toISOString()
     };
+
+    messages.value.push(saved);
 
     // Broadcast via WS with user info
     wsSend("message", saved);
@@ -826,6 +882,53 @@ function showTypingPreview(username) {
   typingPreviewOpen.value = true;
 }
 
+function insertEmoji(emoji) {
+  newMessage.value += emoji;
+  showEmojiPicker.value = false;
+}
+
+async function handleFileSelect(event) {
+  const files = Array.from(event.target.files || []);
+  if (!files.length || !currentChannelId.value) {
+    event.target.value = '';
+    return;
+  }
+
+  for (const file of files) {
+    try {
+      // 1) Create a message first (use current text or filename)
+      const baseContent = newMessage.value?.trim() || file.name;
+      const msgRes = await api.post(`/channels/${currentChannelId.value}/messages`, {
+        content: baseContent
+      });
+      const created = msgRes.data?.message;
+      if (!created) continue;
+
+      // 2) Upload the file against this message
+      const form = new FormData();
+      form.append('file', file);
+      const uploadRes = await api.post(`/messages/${created.id}/files`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const attachment = uploadRes.data?.attachment;
+      if (attachment) {
+        created.attachments = [attachment];
+      }
+
+      // 3) Add to local list and notify via WS
+      messages.value.push(created);
+      wsSend('message', created);
+    } catch (err) {
+      console.error('File upload error:', err?.response?.data || err);
+    }
+  }
+
+  newMessage.value = '';
+  event.target.value = '';
+  scrollToBottom();
+}
+
 async function loadNotificationPreference() {
   try {
     const res = await api.get('/users/notification-preference');
@@ -845,9 +948,54 @@ async function saveNotificationPreference() {
     console.error('Failed to save notification preference:', err);
   }
 }
+
+function jumpToMessage(messageId) {
+  const messageElement = document.getElementById(`message-${messageId}`);
+  if (messageElement) {
+    messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Highlight the message
+    messageElement.classList.add('highlight');
+    setTimeout(() => {
+      messageElement.classList.remove('highlight');
+    }, 2000);
+  }
+}
+
+function updateIsAdmin() {
+  if (!currentChannel.value) {
+    isChannelAdmin.value = false;
+    return;
+  }
+  
+  // Check if current user is admin of this channel
+  const membership = currentChannel.value.members?.find(m => m.user_id === authStore.user?.id);
+  isChannelAdmin.value = membership?.is_admin || currentChannel.value.admin_id === authStore.user?.id || false;
+}
+
+watch(currentChannel, updateIsAdmin);
 </script>
 
+<style scoped>
+.header-actions {
+  position: relative;
+  z-index: 4001;
+}
+.header-menu {
+  z-index: 4002 !important;
+}
+.highlight {
+  animation: pulse 0.5s ease-in-out;
+}
 
+@keyframes pulse {
+  0%, 100% {
+    background-color: inherit;
+  }
+  50% {
+    background-color: rgba(255, 193, 7, 0.3);
+  }
+}
+</style>
 <style>
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }

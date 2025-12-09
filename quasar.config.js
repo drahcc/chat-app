@@ -28,22 +28,23 @@ export default defineConfig((/* ctx */) => {
       vueRouterMode: 'hash',
 
       vitePlugins: [
-        [
-          'vite-plugin-checker',
-          {
-            eslint: {
-              lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{js,mjs,cjs,vue}"',
-              useFlatConfig: true,
-            },
-          },
-          { server: false },
-        ],
+        // ESLint checker disabled for faster dev server startup
+        // [
+        //   'vite-plugin-checker',
+        //   {
+        //     eslint: {
+        //       lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{js,mjs,cjs,vue}"',
+        //       useFlatConfig: true,
+        //     },
+        //   },
+        //   { server: false },
+        // ],
       ],
     },
 
     devServer: {
       open: false,
-      host: 'localhost',
+      host: '127.0.0.1',
       port: 9000,
     },
 

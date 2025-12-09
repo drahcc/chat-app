@@ -47,6 +47,9 @@
           <q-item-label class="text-weight-bold">
             # {{ channel.name }}
           </q-item-label>
+          <q-item-label caption v-if="daysSinceLastMessage(channel) >= 31" class="text-orange">
+            ⚠️ Inactive {{ daysSinceLastMessage(channel) }}+ days
+          </q-item-label>
         </q-item-section>
 
         <q-item-section side>
@@ -92,6 +95,9 @@
           </q-item-label>
           <q-item-label caption v-if="channel.description">
             {{ channel.description }}
+          </q-item-label>
+          <q-item-label caption v-if="daysSinceLastMessage(channel) >= 31" class="text-orange">
+            ⚠️ Inactive {{ daysSinceLastMessage(channel) }}+ days
           </q-item-label>
         </q-item-section>
 
@@ -202,6 +208,15 @@ const availablePublicChannels = computed(() => {
     c.type === 'public' && !userChannelIds.includes(c.id)
   )
 })
+
+function daysSinceLastMessage(channel) {
+  if (!channel.last_message_at) return null
+  const lastMsg = new Date(channel.last_message_at)
+  const now = new Date()
+  const diffMs = now - lastMsg
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  return diffDays
+}
 
 onMounted(async () => {
   await store.loadChannels()
@@ -344,12 +359,15 @@ function createOld() {
 }
 
 function cleanup() {
-  store.manualCleanup().then(async (outcomes) => {
-    const ok = outcomes.filter(o => o.success !== false).length
-    const total = outcomes.length
+  store.manualCleanup().then(async (result) => {
     await store.loadChannels()
     await loadAllChannels()
-    $q.notify({ type: 'positive', message: `Cleaned ${ok}/${total} old channels` })
+    const count = result.deletedChannels || result.deleted || 0
+    const leftCount = result.leftChannels || 0
+    $q.notify({ 
+      type: 'positive', 
+      message: `Cleanup complete: ${count} channels deleted, ${leftCount} left` 
+    })
   }).catch(() => {
     $q.notify({ type: 'negative', message: 'Cleanup failed' })
   })
