@@ -8,6 +8,8 @@
         />
 
         <q-toolbar-title>ChatZone</q-toolbar-title>
+
+        <UserStatusSelector />
       </q-toolbar>
     </q-header>
 
@@ -31,6 +33,7 @@
 <script setup>
 import { ref } from 'vue'
 import EssentialLink from 'components/EssentialLink.vue'
+import UserStatusSelector from 'components/UserStatusSelector.vue'
 
 const leftDrawerOpen = ref(false)
 

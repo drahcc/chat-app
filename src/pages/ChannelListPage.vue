@@ -3,10 +3,25 @@
 
     <!-- DEBUG INFO -->
     <div class="bg-yellow-2 q-pa-sm q-mb-md">
-      <div class="text-grey-8 text-caption">
-        <strong>DEBUG:</strong><br>
-        User: {{ store.currentUser }}<br>
-        Channels: {{ store.getUserChannels.length }}
+      <div class="text-grey-8 text-caption row items-center q-gutter-sm">
+        <strong class="q-mr-sm">DEBUG:</strong>
+        <q-chip size="sm" color="primary" text-color="white" icon="person">
+          {{ store.currentUser?.username || store.currentUser?.nickname || '—' }}
+        </q-chip>
+        <q-chip size="sm" color="grey-7" text-color="white" icon="mail">
+          {{ store.currentUser?.email || '—' }}
+        </q-chip>
+        <q-chip
+          size="sm"
+          :color="statusColor"
+          text-color="white"
+          icon="fiber_manual_record"
+        >
+          {{ currentUserStatus }}
+        </q-chip>
+        <q-chip size="sm" color="secondary" text-color="white" icon="list">
+          Channels: {{ store.getUserChannels.length }}
+        </q-chip>
       </div>
     </div>
 
@@ -145,13 +160,6 @@
       />
 
       <q-btn
-        label="🚀 Direct"
-        color="purple"
-        icon="rocket_launch"
-        @click="goDirect"
-      />
-
-      <q-btn
         label="🧪 Test Nav"
         color="red"
         icon="bug_report"
@@ -174,6 +182,19 @@ const router = useRouter()
 const $q = useQuasar()
 
 const allChannels = ref([])
+
+const currentUserStatus = computed(() => {
+  const id = store.currentUser?.id
+  return id ? store.getUserStatus(id) : 'offline'
+})
+
+const statusColor = computed(() => {
+  switch (currentUserStatus.value) {
+    case 'online': return 'green'
+    case 'dnd': return 'orange'
+    default: return 'grey'
+  }
+})
 
 const availablePublicChannels = computed(() => {
   const userChannelIds = store.getUserChannels.map(c => c.id)
@@ -208,7 +229,19 @@ async function joinPublicChannel(channelId) {
   }
 }
 
-function goToChannel(id) {
+async function goToChannel(id) {
+  try {
+    // Try to join first (no-op if already member)
+    await api.post(`/channels/${id}/join`)
+  } catch (err) {
+    const msg = err?.response?.data?.error || err.message
+    console.warn('Could not auto-join channel:', msg)
+    if (err?.response?.status === 403 || /private|invite required/i.test(String(msg))) {
+      $q.notify?.({ type: 'warning', message: msg || 'Invite required for this channel' })
+      return
+    }
+  }
+  store.setActiveChannel(id)
   router.push(`/chat/${id}`)
 }
 
@@ -269,28 +302,72 @@ async function createPrivateChannel() {
 }
 
 function leave(id) {
-  store.leaveChannel(id)
+  store.leaveChannel(id).then(res => {
+    if (res.success) {
+      $q.notify({ type: 'positive', message: 'Left channel' })
+    } else {
+      $q.notify({ type: 'negative', message: res.error || 'Leave failed' })
+    }
+  })
 }
 
 function testInvite() {
-  $q.notify({ type: 'info', message: 'Invite test triggered' })
+  const current = store.activeChannelId || store.getUserChannels[0]?.id
+  if (!current) return $q.notify({ type: 'warning', message: 'No channel selected' })
+
+  $q.dialog({
+    title: 'Invite user',
+    message: 'Enter username to invite:',
+    prompt: { model: '', type: 'text' },
+    cancel: true,
+    persistent: true
+  }).onOk(async (username) => {
+    if (!username || !username.trim()) return
+    try {
+      await api.post(`/channels/${current}/messages`, { content: `/invite ${username.trim()}` })
+      $q.notify({ type: 'positive', message: `Invite sent to ${username}` })
+    } catch (err) {
+      $q.notify({ type: 'negative', message: err?.response?.data?.error || 'Invite failed' })
+    }
+  })
 }
 
 function createOld() {
-  store.createTestInactiveChannels()
+  $q.notify({ type: 'info', message: 'Creating old/demo channels...' })
+  store.createTestInactiveChannels().then(async () => {
+    await store.loadChannels()
+    await loadAllChannels()
+    $q.notify({ type: 'positive', message: 'Demo old channels created' })
+  }).catch(() => {
+    $q.notify({ type: 'negative', message: 'Failed to create demo channels' })
+  })
 }
 
 function cleanup() {
-  store.manualCleanup()
+  store.manualCleanup().then(async (outcomes) => {
+    const ok = outcomes.filter(o => o.success !== false).length
+    const total = outcomes.length
+    await store.loadChannels()
+    await loadAllChannels()
+    $q.notify({ type: 'positive', message: `Cleaned ${ok}/${total} old channels` })
+  }).catch(() => {
+    $q.notify({ type: 'negative', message: 'Cleanup failed' })
+  })
 }
 
 function checkActivity() {
-  $q.notify({ type: 'info', message: 'Checked channel activity' })
-}
-
-function goDirect() {
-  const first = store.getUserChannels[0]
-  if (first) goToChannel(first.id)
+  store.fetchActivitySnapshot(1).then((rows) => {
+    const summary = rows
+      .map(r => `#${r.name}: ${r.lastMessageAt ? new Date(r.lastMessageAt).toLocaleString() : 'no messages'}`)
+      .join('\n') || 'No channels'
+    $q.dialog({
+      title: 'Channel activity',
+      message: summary.replace(/\n/g, '<br>'),
+      html: true
+    })
+  }).catch(() => {
+    $q.notify({ type: 'negative', message: 'Activity check failed' })
+  })
 }
 
 function testNav() {

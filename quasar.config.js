@@ -42,16 +42,18 @@ export default defineConfig((/* ctx */) => {
     },
 
     devServer: {
-      open: true,
+      open: false,
+      host: 'localhost',
+      port: 9000,
     },
 
     framework: {
       config: {},
 
-      // >>> IMPORTANT <<<  
-      // Това ти трябва, за да работят $q.dialog()
+      // Enable Quasar plugins used in the app
       plugins: [
-        'Dialog'
+        'Dialog',
+        'Notify'
       ],
     },
 

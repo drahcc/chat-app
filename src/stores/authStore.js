@@ -1,6 +1,7 @@
 // src/stores/authStore.js
 import { defineStore } from 'pinia'
 import { api } from 'boot/axios'
+import { useChannelsStore } from './channelsStore'
 
 export const useAuthStore = defineStore('authStore', {
   state: () => {
@@ -39,6 +40,21 @@ export const useAuthStore = defineStore('authStore', {
           nickname: this.user.nickname,
           email: this.user.email 
         })
+
+        // Set user status to online on login
+        try {
+          await api.post('/users/status', { status: 'online' })
+        } catch (statusErr) {
+          console.warn('Failed to set online status:', statusErr)
+        }
+
+        // Load all user statuses immediately after login
+        const channelsStore = useChannelsStore()
+        try {
+          await channelsStore.loadAllUserStatuses()
+        } catch (statusErr) {
+          console.warn('Failed to load user statuses:', statusErr)
+        }
 
         return {
           success: true,

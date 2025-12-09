@@ -8,14 +8,18 @@ export const useChannelsStore = defineStore('channels', {
   state: () => ({
     currentUser: null,
     channels: [],
-    activeChannelId: null
+    activeChannelId: null,
+    userStatuses: {} // userId -> status mapping
   }),
 
   getters: {
     getUserChannels(state) {
       return state.channels
     },
-    getChannelById: (state) => (id) => state.channels.find(c => c.id === id)
+    getChannelById: (state) => (id) => state.channels.find(c => c.id === id),
+    getUserStatus: (state) => (userId) => {
+      return state.userStatuses[userId] || 'offline'
+    }
   },
 
   actions: {
@@ -29,6 +33,9 @@ export const useChannelsStore = defineStore('channels', {
         // set current user from auth store
         const auth = useAuthStore()
         this.currentUser = auth.user || null
+
+        // Load all user statuses
+        await this.loadAllUserStatuses()
 
         // auto-join ws topics (safe: joinChannel checks ws)
         this.channels.forEach(c => {
@@ -114,6 +121,90 @@ export const useChannelsStore = defineStore('channels', {
     removeChannelFromList(id) {
       this.channels = this.channels.filter(c => c.id !== id)
       if (this.activeChannelId === id) this.activeChannelId = this.channels[0]?.id || null
+    },
+
+    async setUserStatus(status) {
+      try {
+        const auth = useAuthStore()
+        await api.post('/users/status', { status })
+        
+        // Update local status
+        if (auth.user?.id) {
+          this.userStatuses[auth.user.id] = status
+        }
+        
+        return true
+      } catch (err) {
+        console.error('setUserStatus error:', err)
+        return false
+      }
+    },
+
+    updateUserStatus(userId, status) {
+      this.userStatuses[userId] = status
+    },
+
+    async loadAllUserStatuses() {
+      try {
+        const res = await api.get('/users/statuses')
+        this.userStatuses = res.data || {}
+        console.log('✅ Loaded user statuses:', this.userStatuses)
+      } catch (err) {
+        console.error('Failed to load user statuses:', err)
+      }
+    },
+
+    async leaveChannel(id) {
+      try {
+        await api.post(`/channels/${id}/leave`)
+        this.removeChannelFromList(id)
+        return { success: true }
+      } catch (err) {
+        console.error('leaveChannel error', err?.response?.data || err)
+        return { success: false, error: err?.response?.data || err.message }
+      }
+    },
+
+    async createTestInactiveChannels() {
+      const names = ['old-archive-1', 'old-archive-2', 'old-archive-3']
+      const results = []
+      for (const name of names) {
+        const res = await this.createChannel(name, 'public')
+        results.push(res)
+      }
+      return results
+    },
+
+    async manualCleanup() {
+      // Leave channels that look like test/old ones
+      const targets = this.channels.filter(c => /^(old-|archive|test-)/i.test(c.name))
+      const outcomes = []
+      for (const chan of targets) {
+        const res = await this.leaveChannel(chan.id)
+        outcomes.push({ id: chan.id, name: chan.name, ...res })
+      }
+      return outcomes
+    },
+
+    async fetchActivitySnapshot(limitPerChannel = 1) {
+      const snapshots = []
+      for (const chan of this.channels) {
+        try {
+          const res = await api.get(`/channels/${chan.id}/messages`, { params: { page: 1, perPage: limitPerChannel } })
+          const list = res.data?.data || res.data || []
+          const latest = Array.isArray(list) && list.length ? list[0] : null
+          snapshots.push({
+            id: chan.id,
+            name: chan.name,
+            lastMessageAt: latest?.created_at || null,
+            lastMessageBy: latest?.user?.nickname || latest?.user?.email || null
+          })
+        } catch (err) {
+          console.error('fetchActivitySnapshot error', chan.id, err?.response?.data || err)
+          snapshots.push({ id: chan.id, name: chan.name, lastMessageAt: null, lastMessageBy: null, error: err?.message })
+        }
+      }
+      return snapshots
     }
   }
 })

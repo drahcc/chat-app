@@ -40,11 +40,18 @@
 
 <script setup>
 import { useChannelsStore } from 'src/stores/channelsStore'
+import { useAuthStore } from 'src/stores/authStore'
+import { useSocketStore } from 'src/stores/socket'
 import { computed } from 'vue'
 
-const store = useChannelsStore()
+const channelsStore = useChannelsStore()
+const authStore = useAuthStore()
+const socketStore = useSocketStore()
 
-const currentStatus = computed(() => store.getUserStatus(store.currentUser))
+const currentStatus = computed(() => {
+  if (!authStore.user?.id) return 'offline'
+  return channelsStore.getUserStatus(authStore.user.id)
+})
 
 const statusColor = computed(() => {
   switch (currentStatus.value) {
@@ -55,8 +62,14 @@ const statusColor = computed(() => {
   }
 })
 
-function setStatus(status) {
-  store.setUserStatus(status)
+async function setStatus(status) {
+  await channelsStore.setUserStatus(status)
+  
+  // Also emit via WebSocket for real-time broadcast
+  const socket = socketStore.socket
+  if (socket) {
+    socket.emit('status:change', { status })
+  }
 }
 </script>
 
