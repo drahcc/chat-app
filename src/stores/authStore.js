@@ -7,8 +7,9 @@ export const useAuthStore = defineStore('authStore', {
   state: () => {
     const user = JSON.parse(localStorage.getItem('user') || 'null')
     const token = localStorage.getItem('token') || null
+    const notificationPreference = localStorage.getItem('notification_preference') || user?.notification_preference || 'all'
     console.log('🔐 AUTH STORE INIT:', { user, token: token ? 'EXISTS' : 'NO TOKEN' })
-    return { user, token }
+    return { user, token, notificationPreference }
   },
 
   actions: {
@@ -31,9 +32,11 @@ export const useAuthStore = defineStore('authStore', {
 
         this.user = res.data.user
         this.token = jwt
+        this.notificationPreference = res.data.user?.notification_preference || 'all'
 
         localStorage.setItem('user', JSON.stringify(this.user))
         localStorage.setItem('token', jwt)
+        localStorage.setItem('notification_preference', this.notificationPreference)
         
         console.log('✅ LOGIN SUCCESS:', { 
           userId: this.user.id, 
@@ -81,8 +84,44 @@ export const useAuthStore = defineStore('authStore', {
     logout() {
       this.user = null
       this.token = null
+      this.notificationPreference = 'all'
       localStorage.removeItem('user')
       localStorage.removeItem('token')
+      localStorage.removeItem('notification_preference')
+    },
+
+    async loadNotificationPreference() {
+      try {
+        const res = await api.get('/users/notification-preference')
+        const pref = res.data?.notification_preference || 'all'
+        this.notificationPreference = pref
+        localStorage.setItem('notification_preference', pref)
+        // also sync into user object if present
+        if (this.user) {
+          this.user.notification_preference = pref
+          localStorage.setItem('user', JSON.stringify(this.user))
+        }
+        return pref
+      } catch (err) {
+        console.error('Failed to load notification preference:', err)
+        return this.notificationPreference || 'all'
+      }
+    },
+
+    async setNotificationPreference(preference) {
+      try {
+        await api.post('/users/notification-preference', { preference })
+        this.notificationPreference = preference
+        localStorage.setItem('notification_preference', preference)
+        if (this.user) {
+          this.user.notification_preference = preference
+          localStorage.setItem('user', JSON.stringify(this.user))
+        }
+        return true
+      } catch (err) {
+        console.error('Failed to save notification preference:', err)
+        return false
+      }
     }
   }
 })

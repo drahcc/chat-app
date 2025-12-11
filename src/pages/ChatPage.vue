@@ -202,17 +202,19 @@ import { useRoute, useRouter } from "vue-router";
 import { useChannelsStore } from "src/stores/channelsStore";
 import { useAuthStore } from "src/stores/authStore";
 import { useChatStore } from "src/stores/chatStore";
-import { joinChannel, wsEvents, wsSend } from "src/boot/ws";
+import { joinChannel, wsEvents, wsSend, wsEmit } from "src/boot/ws";
 import { api } from "src/boot/axios";
 import MessageItem from "src/components/MessageItem.vue";
 import MessageSearch from "src/components/MessageSearch.vue";
 import PinnedMessages from "src/components/PinnedMessages.vue";
+import { useNotifications } from "src/composables/useNotifications";
 
 const route = useRoute();
 const router = useRouter();
 const channelsStore = useChannelsStore();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
+const notifications = useNotifications();
 
 const messagesContainer = ref(null);
 const messagesEnd = ref(null);
@@ -230,17 +232,27 @@ const lastPage = ref(1);
 const isLoadingOlder = ref(false);
 const settingsMenuOpen = ref(false);
 const notificationSettingsOpen = ref(false);
-const notificationPreference = ref('all');
+const notificationPreference = ref(authStore.notificationPreference || 'all');
 const showSearch = ref(false);
 const isChannelAdmin = ref(false);
 const showEmojiPicker = ref(false);
 const commonEmojis = ['😀', '😂', '😍', '🥰', '😎', '🤔', '👍', '👎', '❤️', '🔥', '🎉', '😢', '😡', '🙏', '💯', '✨'];
+
+const currentUserStatus = computed(() => {
+  const uid = authStore.user?.id;
+  if (!uid) return 'offline';
+  return channelsStore.getUserStatus(uid) || 'offline';
+});
 
 const currentChannel = computed(() =>
   channelsStore.channels.find((c) => c.id == currentChannelId.value)
 );
 
 const currentUser = computed(() => authStore.user);
+
+watch(() => authStore.notificationPreference, (val) => {
+  notificationPreference.value = val || 'all';
+});
 
 onMounted(async () => {
   // Load all user statuses first
@@ -275,6 +287,11 @@ onMounted(async () => {
   wsEvents.on("message", onMessage);
   wsEvents.on("typing", onTypingEvent);
   wsEvents.on("user:status", onUserStatus);
+  
+  // Listen for kick events on current channel
+  if (currentChannelId.value) {
+    wsEvents.on(`channel:${currentChannelId.value}:kick`, onUserKicked);
+  }
 });
 
 // Watch for route changes to handle navigation
@@ -288,13 +305,21 @@ watch(() => route.params.channelId, async (newId) => {
   }
 });
 
-watch(currentChannelId, async (id) => {
-  if (id) {
+watch(currentChannelId, async (newId, oldId) => {
+  if (newId) {
+    // Remove old channel kick listener
+    if (oldId) {
+      wsEvents.off(`channel:${oldId}:kick`, onUserKicked);
+    }
+    
+    // Add new channel kick listener
+    wsEvents.on(`channel:${newId}:kick`, onUserKicked);
+    
     messages.value = [];
     currentPage.value = 1;
     lastPage.value = 1;
-    await joinChannel(id);
-    await loadMessages(id, 1, false);
+    await joinChannel(newId);
+    await loadMessages(newId, 1, false);
   }
 });
 
@@ -378,8 +403,11 @@ function onMessage(msg) {
   console.log('   Current channel:', currentChannelId.value);
   console.log('   Message channel:', msg.channel_id);
   
-  if (msg.channel_id != currentChannelId.value) {
-    console.warn('   ⚠️ Message for different channel, ignoring');
+  const sameChannel = msg.channel_id == currentChannelId.value;
+  notifyForMessage(msg, sameChannel);
+
+  if (!sameChannel) {
+    console.warn('   ⚠️ Message for different channel, not rendering');
     return;
   }
 
@@ -460,10 +488,68 @@ function onUserStatus(data) {
   }
 }
 
+function isMentioned(msg) {
+  const myId = currentUser.value?.id;
+  const myNick = currentUser.value?.nickname || currentUser.value?.username;
+  const byId = msg.mentioned_user_id && myId && msg.mentioned_user_id === myId;
+  const byText = myNick && msg.content && msg.content.includes(`@${myNick}`);
+  return Boolean(byId || byText);
+}
+
+function channelNameById(id) {
+  const chan = channelsStore.channels.find((c) => c.id === id);
+  return chan?.name || `channel ${id}`;
+}
+
+function notifyForMessage(msg, sameChannel) {
+  // Respect DND
+  if (currentUserStatus.value === 'dnd') return;
+
+  const mentioned = isMentioned(msg);
+  if (notificationPreference.value === 'mentions_only' && !mentioned) return;
+
+  if (notifications.isAppVisible()) return; // show only when app hidden
+
+  const sender = msg.user?.nickname || msg.user?.username || 'Unknown';
+  const channelName = sameChannel && currentChannel.value?.name
+    ? currentChannel.value.name
+    : channelNameById(msg.channel_id);
+
+  if (mentioned) {
+    notifications.notifyMention(sender, msg.content || '', channelName);
+    return;
+  }
+
+  notifications.notifyNewMessage(sender, msg.content || '', channelName);
+}
+
+function onUserKicked(data) {
+  console.log('👢 User kicked event:', data);
+  
+  // If I am the one who was kicked, redirect to channels list
+  if (data.userId === currentUser.value?.id) {
+    $q.notify({
+      type: 'negative',
+      message: '❌ You were kicked from this channel',
+      position: 'top',
+      timeout: 3000
+    });
+    
+    // Reload channels to remove this one from the list
+    channelsStore.loadChannels();
+    
+    // Redirect to channels list
+    router.push('/channels');
+  }
+}
+
 onBeforeUnmount(() => {
   wsEvents.off("message", onMessage);
   wsEvents.off("typing", onTypingEvent);
   wsEvents.off("user:status", onUserStatus);
+  if (currentChannelId.value) {
+    wsEvents.off(`channel:${currentChannelId.value}:kick`, onUserKicked);
+  }
 });
 
 async function sendMessage() {
@@ -539,6 +625,9 @@ async function handleCommand(cmd) {
 
   try {
     switch (command) {
+      case '/help':
+        await handleHelp();
+        break;
       case '/join':
         await handleJoin(parts);
         break;
@@ -568,7 +657,12 @@ async function handleCommand(cmd) {
         await handleUnban(parts);
         break;
       default:
-        console.warn('Unknown command:', command);
+        messages.value.push({
+          id: null,
+          user: { nickname: 'System' },
+          content: `Unknown command: ${command}. Type /help to see available commands.`,
+          created_at: new Date().toISOString()
+        });
     }
   } catch (err) {
     console.error('Command error:', err);
@@ -648,12 +742,46 @@ async function handleList() {
   }
 }
 
+async function handleHelp() {
+  const helpMessage = `📚 Available Commands:
+
+📝 Channel Management
+• /join channelName [private] - Join existing channel or create new one
+• /cancel or /quit - Leave current channel
+• /list - Show all members in current channel
+
+👥 User Management
+• /invite @username - Invite user to current channel
+• /kick @username [reason] - Remove user from channel (admin only)
+• /revoke @username - Cancel pending invitation (admin only)
+• /unban @username - Unban user from channel (admin only)
+
+ℹ️ Other
+• /help - Show this help message
+
+Example:
+/join general - Join or create channel "general"
+/invite @john - Invite user "john" to current channel`;
+
+  messages.value.push({
+    id: null,
+    user: { nickname: 'System' },
+    content: helpMessage,
+    created_at: new Date().toISOString()
+  });
+}
+
 async function handleKick(parts) {
   if (parts.length < 2) {
-    console.error('Usage: /kick username');
+    messages.value.push({
+      id: null,
+      user: { nickname: 'System' },
+      content: 'Usage: /kick username',
+      created_at: new Date().toISOString()
+    });
     return;
   }
-  const username = parts[1];
+  const username = parts[1].replace('@', ''); // Remove @ if present
   
   try {
     const response = await api.post(`/channels/${currentChannelId.value}/messages`, {
@@ -664,22 +792,41 @@ async function handleKick(parts) {
       messages.value.push({
         id: null,
         user: { nickname: 'System' },
-        content: `Error: ${response.data.error}`,
+        content: `❌ ${response.data.error}`,
         created_at: new Date().toISOString()
       });
     } else if (response.data.success) {
       messages.value.push({
         id: null,
         user: { nickname: 'System' },
-        content: response.data.message || `Kicked ${username}`,
+        content: `✅ ${response.data.message || `Kicked ${username}`}`,
         created_at: new Date().toISOString()
       });
+      
+      // Send WebSocket event to notify the kicked user
+      if (response.data.userId && response.data.channelId) {
+        wsEmit('user:kick', {
+          userId: response.data.userId,
+          channelId: response.data.channelId,
+          kickedBy: currentUser.value.id
+        });
+      }
       
       // Reload members
       await channelsStore.loadChannels();
     }
   } catch (err) {
     console.error('Kick error:', err);
+    const errorMsg = err.response?.data?.error 
+      || err.response?.data?.message 
+      || err.message 
+      || 'Unknown error occurred';
+    messages.value.push({
+      id: null,
+      user: { nickname: 'System' },
+      content: `❌ Failed to kick user: ${errorMsg}`,
+      created_at: new Date().toISOString()
+    });
   }
 }
 
@@ -931,8 +1078,8 @@ async function handleFileSelect(event) {
 
 async function loadNotificationPreference() {
   try {
-    const res = await api.get('/users/notification-preference');
-    notificationPreference.value = res.data?.notification_preference || 'all';
+    const pref = await authStore.loadNotificationPreference();
+    notificationPreference.value = pref || 'all';
   } catch (err) {
     console.error('Failed to load notification preference:', err);
   }
@@ -940,10 +1087,10 @@ async function loadNotificationPreference() {
 
 async function saveNotificationPreference() {
   try {
-    await api.post('/users/notification-preference', {
-      preference: notificationPreference.value
-    });
-    console.log('Notification preference saved:', notificationPreference.value);
+    const ok = await authStore.setNotificationPreference(notificationPreference.value);
+    if (ok) {
+      console.log('Notification preference saved:', notificationPreference.value);
+    }
   } catch (err) {
     console.error('Failed to save notification preference:', err);
   }

@@ -9,6 +9,7 @@
 
         <q-toolbar-title>ChatZone</q-toolbar-title>
 
+        <NotificationPreferenceSelector class="q-mr-xs" />
         <UserStatusSelector />
       </q-toolbar>
     </q-header>
@@ -34,6 +35,7 @@
 import { ref } from 'vue'
 import EssentialLink from 'components/EssentialLink.vue'
 import UserStatusSelector from 'components/UserStatusSelector.vue'
+import NotificationPreferenceSelector from 'components/NotificationPreferenceSelector.vue'
 
 const leftDrawerOpen = ref(false)
 

@@ -36,16 +36,20 @@
       <div class="channels-list">
         <TransitionGroup name="channel">
           <div
-            v-for="channel in store.getUserChannels"
+            v-for="channel in sortedChannels"
             :key="channel.id"
             class="channel-item"
+            :class="{ 'newly-invited': isNewlyInvited(channel) }"
             @click="goToChannel(channel.id)"
           >
             <div class="channel-icon" :class="{ 'inactive': daysSinceLastMessage(channel) >= 31 }">
               <q-icon :name="channel.type === 'private' ? 'lock' : 'tag'" />
             </div>
             <div class="channel-info">
-              <div class="channel-name"># {{ channel.name }}</div>
+              <div class="channel-name">
+                # {{ channel.name }}
+                <q-badge v-if="isNewlyInvited(channel)" color="amber" text-color="black" class="q-ml-xs">NEW</q-badge>
+              </div>
               <div v-if="daysSinceLastMessage(channel) >= 31" class="channel-inactive">
                 <q-icon name="warning" size="12px" />
                 Inactive {{ daysSinceLastMessage(channel) }}+ days
@@ -67,7 +71,7 @@
           </div>
         </TransitionGroup>
 
-        <div v-if="store.getUserChannels.length === 0" class="empty-state">
+        <div v-if="sortedChannels.length === 0" class="empty-state">
           <q-icon name="inbox" size="60px" />
           <div>No channels yet</div>
           <div class="empty-hint">Create or join a channel to get started!</div>
@@ -177,6 +181,28 @@ const availablePublicChannels = computed(() => {
   )
 })
 
+// Sort channels: newly invited (last 24h) first, then rest
+const sortedChannels = computed(() => {
+  const channels = [...store.getUserChannels]
+  return channels.sort((a, b) => {
+    const aIsNew = isNewlyInvited(a)
+    const bIsNew = isNewlyInvited(b)
+    
+    if (aIsNew && !bIsNew) return -1
+    if (!aIsNew && bIsNew) return 1
+    return 0
+  })
+})
+
+function isNewlyInvited(channel) {
+  if (!channel.invited_at) return false
+  const invitedAt = new Date(channel.invited_at)
+  const now = new Date()
+  const diffMs = now - invitedAt
+  const diffHours = diffMs / (1000 * 60 * 60)
+  return diffHours <= 24 // Highlight for 24 hours
+}
+
 function daysSinceLastMessage(channel) {
   if (!channel.last_message_at) return null
   const lastMsg = new Date(channel.last_message_at)
@@ -223,6 +249,14 @@ async function goToChannel(id) {
       return
     }
   }
+  
+  // Clear invited_at when user opens the channel (removes highlight)
+  try {
+    await api.post(`/channels/${id}/clear-invite-flag`)
+  } catch (err) {
+    console.warn('Could not clear invite flag:', err)
+  }
+  
   store.setActiveChannel(id)
   router.push(`/chat/${id}`)
 }
@@ -351,35 +385,13 @@ function checkActivity() {
 <style scoped>
 .channels-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
   position: relative;
   overflow-x: hidden;
 }
 
 .background-animation {
-  position: fixed;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.bubble {
-  position: absolute;
-  border-radius: 50%;
-  background: linear-gradient(135deg, rgba(0, 188, 212, 0.15), rgba(103, 58, 183, 0.15));
-  animation: float 20s infinite ease-in-out;
-}
-
-.bubble-1 { width: 150px; height: 150px; left: -5%; top: 10%; animation-delay: 0s; }
-.bubble-2 { width: 200px; height: 200px; right: -8%; top: 40%; animation-delay: 5s; }
-.bubble-3 { width: 100px; height: 100px; left: 20%; bottom: 10%; animation-delay: 10s; }
-.bubble-4 { width: 120px; height: 120px; right: 15%; bottom: 20%; animation-delay: 15s; }
-
-@keyframes float {
-  0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.3; }
-  50% { transform: translateY(-30px) rotate(180deg); opacity: 0.6; }
+  display: none;
 }
 
 .channels-container {
@@ -388,31 +400,24 @@ function checkActivity() {
   max-width: 800px;
   margin: 0 auto;
   padding: 20px;
-  animation: fadeIn 0.6s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .user-card {
   display: flex;
   align-items: center;
   gap: 15px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  background: white;
+  border-radius: 12px;
   padding: 16px 20px;
   margin-bottom: 30px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .user-avatar {
   position: relative;
   width: 50px;
   height: 50px;
-  background: linear-gradient(135deg, #00bcd4, #7c4dff);
+  background: #007bff;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -427,7 +432,7 @@ function checkActivity() {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 2px solid #1a1a2e;
+  border: 2px solid white;
 }
 
 .status-dot.online { background: #4caf50; }
@@ -436,8 +441,8 @@ function checkActivity() {
 .status-dot.offline { background: #9e9e9e; }
 
 .user-info { flex: 1; }
-.user-name { color: white; font-weight: 600; font-size: 1.1rem; }
-.user-email { color: rgba(255, 255, 255, 0.5); font-size: 0.85rem; }
+.user-name { color: #1a1a1a; font-weight: 600; font-size: 1.1rem; }
+.user-email { color: #666; font-size: 0.85rem; }
 
 .section-header {
   display: flex;
@@ -446,31 +451,25 @@ function checkActivity() {
   margin-bottom: 15px;
   font-size: 1.3rem;
   font-weight: 700;
+  color: #1a1a1a;
 }
 
-.section-icon { font-size: 1.5rem; color: #00bcd4; }
-.section-icon.public { color: #4caf50; }
+.section-icon { font-size: 1.5rem; color: #007bff; }
+.section-icon.public { color: #28a745; }
 
 .gradient-text {
-  background: linear-gradient(90deg, #00bcd4, #7c4dff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #1a1a1a;
 }
 
 .gradient-text-alt {
-  background: linear-gradient(90deg, #4caf50, #8bc34a);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #1a1a1a;
 }
 
 .channels-list {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(15px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  background: white;
+  border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .channel-item {
@@ -480,17 +479,16 @@ function checkActivity() {
   padding: 14px 18px;
   cursor: pointer;
   transition: all 0.2s ease;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .channel-item:last-child { border-bottom: none; }
-.channel-item:hover { background: rgba(0, 188, 212, 0.1); }
-.channel-item.public:hover { background: rgba(76, 175, 80, 0.1); }
+.channel-item:hover { background: #f8f9fa; }
 
 .channel-icon {
   width: 40px;
   height: 40px;
-  background: linear-gradient(135deg, #00bcd4, #7c4dff);
+  background: #007bff;
   border-radius: 10px;
   display: flex;
   align-items: center;
@@ -500,12 +498,12 @@ function checkActivity() {
   flex-shrink: 0;
 }
 
-.channel-icon.public { background: linear-gradient(135deg, #4caf50, #8bc34a); }
-.channel-icon.inactive { background: linear-gradient(135deg, #ff9800, #f44336); }
+.channel-icon.public { background: #28a745; }
+.channel-icon.inactive { background: #ff9800; }
 
 .channel-info { flex: 1; min-width: 0; }
-.channel-name { color: white; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.channel-desc { color: rgba(255, 255, 255, 0.5); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.channel-name { color: #1a1a1a; font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.channel-desc { color: #666; font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .channel-inactive {
   display: flex;
@@ -519,7 +517,7 @@ function checkActivity() {
 .channel-actions { display: flex; align-items: center; gap: 8px; }
 
 .leave-btn {
-  color: rgba(255, 255, 255, 0.4) !important;
+  color: #999 !important;
   opacity: 0;
   transition: all 0.2s ease;
 }
@@ -527,15 +525,19 @@ function checkActivity() {
 .channel-item:hover .leave-btn { opacity: 1; }
 .leave-btn:hover { color: #f44336 !important; }
 
-.arrow-icon { color: rgba(255, 255, 255, 0.3); transition: transform 0.2s ease; }
-.channel-item:hover .arrow-icon { transform: translateX(4px); color: rgba(255, 255, 255, 0.6); }
+.arrow-icon { color: #ccc; transition: transform 0.2s ease; }
+.channel-item:hover .arrow-icon { transform: translateX(4px); color: #999; }
 
 .join-btn {
-  background: linear-gradient(135deg, #4caf50, #8bc34a) !important;
+  background: #28a745 !important;
   color: white !important;
   border-radius: 8px !important;
   text-transform: none;
   font-weight: 600;
+}
+
+.join-btn:hover {
+  background: #218838 !important;
 }
 
 .empty-state {
@@ -544,13 +546,13 @@ function checkActivity() {
   align-items: center;
   justify-content: center;
   padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.4);
+  color: #999;
   text-align: center;
 }
 
 .empty-state.small { padding: 25px 20px; }
 .empty-state .q-icon { margin-bottom: 10px; opacity: 0.5; }
-.empty-hint { font-size: 0.85rem; margin-top: 5px; color: rgba(255, 255, 255, 0.3); }
+.empty-hint { font-size: 0.85rem; margin-top: 5px; color: #bbb; }
 
 .action-buttons {
   display: flex;
@@ -565,30 +567,31 @@ function checkActivity() {
   min-width: 140px;
   max-width: 200px;
   padding: 14px 20px !important;
-  border-radius: 14px !important;
+  border-radius: 8px !important;
   text-transform: none;
   font-weight: 600;
   color: white !important;
   transition: all 0.3s ease;
 }
 
-.action-btn.create { background: linear-gradient(135deg, #00bcd4, #7c4dff) !important; }
-.action-btn.private { background: linear-gradient(135deg, #ff9800, #f57c00) !important; }
-.action-btn.invite { background: linear-gradient(135deg, #4caf50, #8bc34a) !important; }
+.action-btn.create { background: #007bff !important; }
+.action-btn.create:hover { background: #0056b3 !important; }
 
-.action-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-}
+.action-btn.private { background: #ff9800 !important; }
+.action-btn.private:hover { background: #e68900 !important; }
+
+.action-btn.invite { background: #28a745 !important; }
+.action-btn.invite:hover { background: #218838 !important; }
 
 .admin-tools {
   margin-top: 30px;
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: white !important;
+  border: 1px solid #e0e0e0;
   border-radius: 12px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-.admin-tools :deep(.q-item) { color: rgba(255, 255, 255, 0.6); }
+.admin-tools :deep(.q-item) { color: #666; }
 .admin-tools :deep(.q-expansion-item__content) { padding: 0; }
 
 .admin-buttons {
@@ -599,17 +602,28 @@ function checkActivity() {
 }
 
 .admin-btn {
-  color: rgba(255, 255, 255, 0.6) !important;
+  color: #666 !important;
   text-transform: none;
   font-size: 0.85rem;
 }
 
-.admin-btn:hover { color: white !important; background: rgba(255, 255, 255, 0.1) !important; }
+.admin-btn:hover { color: #1a1a1a !important; background: #f0f0f0 !important; }
 .admin-btn.danger:hover { color: #f44336 !important; background: rgba(244, 67, 54, 0.1) !important; }
 
 .channel-enter-active, .channel-leave-active { transition: all 0.3s ease; }
 .channel-enter-from { opacity: 0; transform: translateX(-20px); }
 .channel-leave-to { opacity: 0; transform: translateX(20px); }
+
+/* Newly invited channel highlighting */
+.channel-item.newly-invited {
+  background: linear-gradient(135deg, #fff8e1 0%, #ffffff 100%) !important;
+  border-left: 4px solid #ffc107 !important;
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.2) !important;
+}
+
+.channel-item.newly-invited:hover {
+  box-shadow: 0 6px 20px rgba(255, 193, 7, 0.3) !important;
+}
 
 @media (max-width: 600px) {
   .user-card { flex-wrap: wrap; }

@@ -1,6 +1,11 @@
+import { AppVisibility, Notify } from 'quasar'
+
 export function useNotifications() {
-  // Проверка дали приложението е видимо
+  // Проверка дали приложението е видимо (ползваме AppVisibility ако е налично)
   function isAppVisible() {
+    if (AppVisibility && typeof AppVisibility.isActive === 'function') {
+      return AppVisibility.isActive
+    }
     return !document.hidden
   }
   
@@ -15,33 +20,49 @@ export function useNotifications() {
     // Проверка дали браузърът поддържа нотификации
     if (!('Notification' in window)) {
       console.log('❌ This browser does not support notifications')
+      Notify?.create({ type: 'negative', message: 'Browser does not support notifications' })
       return
     }
-    
-    // Поискане на разрешение ако не е дадено
-    if (Notification.permission === 'default') {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
+
+    const permission = Notification.permission
+    if (permission === 'granted') {
+      createNotification(title, message, actions)
+      return
+    }
+
+    if (permission === 'default') {
+      Notification.requestPermission().then((perm) => {
+        if (perm === 'granted') {
           createNotification(title, message, actions)
+        } else {
+          Notify?.create({ type: 'warning', message: 'Notifications blocked by user' })
         }
       })
-    } else if (Notification.permission === 'granted') {
-      createNotification(title, message, actions)
-    } else {
-      console.log('🔇 Notification permission denied')
+      return
     }
+
+    console.log('🔇 Notification permission denied')
   }
   
   // Създаване на нотификация
   function createNotification(title, message, actions) {
-    const notification = new Notification(title, {
+    // Browser Notification actions require ServiceWorker; omit them to avoid errors.
+    const notificationOptions = {
       body: message,
-      icon: '/icons/icon-128x128.png', // Можете да добавите икона по-късно
+      icon: '/icons/icon-128x128.png',
       badge: '/icons/icon-128x128.png',
-      tag: 'chatzone-message', // Групиране на нотификации
-      requireInteraction: false,
-      actions: actions
-    })
+      tag: 'chatzone-message',
+      requireInteraction: false
+    }
+
+    // Only add actions if ServiceWorker registration exists and browser supports actions
+    const hasServiceWorker = typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller
+    const supportsActions = typeof Notification !== 'undefined' && Notification.maxActions && Notification.maxActions > 0
+    if (hasServiceWorker && supportsActions && Array.isArray(actions) && actions.length) {
+      notificationOptions.actions = actions
+    }
+
+    const notification = new Notification(title, notificationOptions)
     
     // Клик върху нотификацията отваря приложението
     notification.onclick = () => {

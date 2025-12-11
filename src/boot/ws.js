@@ -77,6 +77,16 @@ export default boot(() => {
       console.log(`👋 [WS] User left:`, data)
       wsEvents.emit('leave', data)
     }
+    // Handle channel:N:kick
+    else if (eventName.match(/^channel:\d+:kick$/)) {
+      console.log(`👢 [WS] User kicked:`, data)
+      wsEvents.emit(eventName, data)
+    }
+    // Handle user:status
+    else if (eventName === 'user:status') {
+      console.log(`👤 [WS] User status:`, data)
+      wsEvents.emit('user:status', data)
+    }
   })
 })
 
@@ -115,4 +125,15 @@ export function wsSend(event, data) {
 
   console.log(`🔌 [WS] Emitting "${topicName}:${event}":`, data)
   socket.emit(`${topicName}:${event}`, data)
+}
+
+// SEND DIRECT EVENT (for kick, ban, etc.) -----------------------------
+export function wsEmit(event, data) {
+  if (!socket) {
+    console.error("wsEmit: Socket not initialized")
+    return
+  }
+
+  console.log(`🔌 [WS] Emitting direct event "${event}":`, data)
+  socket.emit(event, data)
 }
