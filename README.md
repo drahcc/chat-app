@@ -112,28 +112,48 @@ src/
  │   └─ ws.js
  └─ composables/
      └─ useNotifications.js
+
+---
+
 ## 🔔 Notification System (Detailed)
-  Fires only when browser window is hidden
-  Respects user preferences (all or mentions_only)
-  Auto-disabled while user status = dnd
-  Does not require a Service Worker (safe fallback)
+
+- Fires only when the browser window is **hidden**  
+- Respects user preferences (`all` or `mentions_only`)  
+- Auto-disabled while user status = `dnd`  
+- Does **not** require a Service Worker (safe fallback)
+
+---
+
 ## ✨ Invite Highlighting Logic
-Backend sets invited_at.
+
+Backend sets `invited_at`.
+
 Frontend behavior:
-Pins the invited channel at the top
-Displays NEW badge
-Clears highlight via:
-`POST /channels/:id/clear-invite`
+
+- Pins the invited channel at the top  
+- Displays **NEW** badge  
+- Clears highlight via:
+
+
+
+---
+
 ## 🐛 Troubleshooting
-Dev server fails to start
-  Ensure Node ≥ 16
-    Delete node_modules and reinstall
-No API / Socket connection
-  Backend must run on:
-    3333 → API
-    3334 → WebSocket
-Notifications not appearing
-  Browser must allow notifications
-  Notifications appear only when tab is not in focus
+
+### Dev server fails to start
+- Ensure Node ≥ 16  
+- Delete `node_modules` and reinstall  
+
+### No API / Socket connection
+Backend must run on:
+
+- **3333** → API  
+- **3334** → WebSocket  
+
+### Notifications not appearing
+- Browser must allow notifications  
+- Notifications appear **only when the tab is not in focus**
+
+---
 
 
