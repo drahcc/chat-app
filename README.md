@@ -1,90 +1,139 @@
-# ChatZone  
+# ChatZone Frontend (Quasar + Vue 3 + Pinia)
 
-ChatZone is a **feature-rich real-time chat application** built with the Quasar Framework (Vue.js).  
-It is created as part of the *Web Technologies* course at STU FIIT.
+A feature-rich real-time chat SPA built with **Quasar (Vue 3)** and **Pinia**, connected to the ChatZone backend (AdonisJS + Socket.IO).  
+Includes channels, messages, mentions, invites, presence, notifications and more.
 
-## 👥 Development Team
-
-- **Valentin Kitsonov** - Frontend development, application architecture, state management
-- **Dragomir Venkov** - UI/UX design, components, routing system
+---
 
 ## 🚀 Features
 
-### 🔐 User Management
-- User status system (Online, Do Not Disturb, Offline)
-- Real-time status updates visible to all users
+### 🔐 Authentication
+- Login & register (email + nickname)
+- JWT token storage
+- Persistent session handling
 
-### 💬 Channel System
-- **Public & Private channels** with different permissions
-- **Auto-cleanup system** - automatically deletes channels inactive for 30+ days
-- **Channel name locking** - prevents reuse of deleted channel names for 7 days
-- **New invite highlighting** - pinned channels with new invitations
+### 👤 User Presence
+- Online / Away / DND status
+- Real-time presence updates
 
-### 📨 Messaging & Real-time Features
-- **Real-time messaging** with typing indicators
-- **Advanced mentions system** (`@username`) with yellow highlighting
-- **Infinite scroll** for message history (General channel)
-- **Command line interface** with slash commands
+### 💬 Channels
+- Public & private channels
+- Create, join, leave
+- Smart sorting
+- Invite badges (NEW)
+- Invite pinning using `invited_at`
 
-### ⚡ Advanced Functionality
-- **Kick voting system** - 3 community votes result in permanent ban
-- **Browser notifications** with app visibility detection
-- **Notification preferences** - global or mentions-only mode
-- **Admin privileges** - channel management and user moderation
-- **Real-time typing preview** - see what others are typing before they send
+### 📩 Invites
+- Highlighted with NEW badge
+- Auto-pinned until opened
+- Cleared automatically via `/channels/:id/clear-invite`
 
-### 🎯 Slash Commands
-- `/join [name] [private]` - Create or join channels
-- `/invite [user]` - Invite users to channels
-- `/kick [user]` - Kick users (community voting in public channels)
-- `/cancel` - Leave or delete channels
-- `/list` - View channel members
+### 📨 Messages
+- Real-time Socket.IO delivery
+- Infinite scroll history
+- Edit/delete flags
+- Mentions (`@nickname`)
+- Mention highlight and notifications
 
-## 🏗️ System Architecture
+### ✍️ Typing Indicator
+- Live typing display
+- Preview of typed text
 
-![UML Class Diagram](./UML_Diagram_ChatApp_Valentin_Kitsonov_Dragomir_Venkov.jpeg)
-*Diagram created by Valentin Kitsonov and Dragomir Venkov*
+### ⌨️ Commands
+`/help`, `/join`, `/invite`, `/kick`, `/ban`, `/unban`, `/list`,  
+`/cancel`, `/quit`
 
-## 🛠 Technologies Used
+### 🔔 Notifications
+- Browser notifications (hidden window only)
+- Notification preferences: `all` or `mentions_only`
+- Auto-suppressed in DND mode
+- Safe fallback when Service Worker missing
 
-- **Framework**: Quasar (Vue.js 3)
-- **State Management**: Pinia
-- **Language**: JavaScript
-- **Architecture**: Single Page Application (SPA)
-- **UI**: Material Design components (Quasar UI)
-- **Real-time Features**: Browser-based real-time simulation
+### 🚫 Kick Handling
+- Real-time kick event
+- Auto-redirect to channel list
 
-## 📁 Project Structure
+### 🖥️ UI
+- Minimalistic responsive SPA
+- Quasar UI components
+- Login/Register/Channels/Chat screens
+
+---
+
+## 🛠 Tech Stack
+- **Quasar Framework (Vue 3, Vite)**
+- **Pinia** (state management)
+- **Axios**
+- **Socket.IO client**
+- **SCSS**
+
+---
+
+## 📦 Prerequisites
+- **Node.js ≥ 16**
+- Backend running at:
+  - API → `http://127.0.0.1:3333`
+  - WebSocket → `ws://127.0.0.1:3334`
+
+---
+
+## 📥 Install
+
+`bash
+cd "c:\Users\PC NITRO INTEL\Desktop\Нова папка\chat-app"
+npm install`
+
+## ▶️ Run (Dev)
+
+`bash
+cd "c:\Users\PC NITRO INTEL\Desktop\Нова папка\chat-app"
+quasar dev`
+
+## 🏗 Build (SPA)
+`cd "c:\Users\PC NITRO INTEL\Desktop\Нова папка\chat-app"
+quasar build` 
+## 📂 Key Paths
 src/
-├── pages/
-│ ├── LoginPage.vue # User authentication
-│ ├── RegisterPage.vue # User registration
-│ ├── ChannelListPage.vue # Channels overview
-│ └── ChatPage.vue # Main chat interface
-├── stores/
-│ └── channelsStore.js # Centralized state management
-├── layouts/
-│ └── MainLayout.vue # Application layout
-└── router/
-└── index.js # Vue Router configuration
+ ├─ App.vue
+ ├─ layouts/
+ │   └─ MainLayout.vue
+ ├─ pages/
+ │   ├─ LoginPage.vue
+ │   ├─ RegisterPage.vue
+ │   ├─ ChannelListPage.vue
+ │   └─ ChatPage.vue
+ ├─ stores/
+ │   ├─ authStore.js
+ │   ├─ channelsStore.js
+ │   └─ chatStore.js
+ ├─ boot/
+ │   ├─ axios.js
+ │   ├─ socket.js
+ │   └─ ws.js
+ └─ composables/
+     └─ useNotifications.js
+## 🔔 Notification System (Detailed)
+  Fires only when browser window is hidden
+  Respects user preferences (all or mentions_only)
+  Auto-disabled while user status = dnd
+  Does not require a Service Worker (safe fallback)
+## ✨ Invite Highlighting Logic
+Backend sets invited_at.
+Frontend behavior:
+Pins the invited channel at the top
+Displays NEW badge
+Clears highlight via:
+`POST /channels/:id/clear-invite`
+## 🐛 Troubleshooting
+Dev server fails to start
+  Ensure Node ≥ 16
+    Delete node_modules and reinstall
+No API / Socket connection
+  Backend must run on:
+    3333 → API
+    3334 → WebSocket
+Notifications not appearing
+  Browser must allow notifications
+  Notifications appear only when tab is not in focus
 
-## 🎓 Course Information
 
-This project is developed for **Web Technologies** course at **STU FIIT**.  
-It demonstrates advanced frontend development concepts including:
-- Complex state management
-- Real-time UI updates
-- Advanced Vue.js composition API
-- Responsive design principles
-- Modern JavaScript patterns
-
-## 🔮 Future Enhancements
-
-- Backend integration with WebSocket support
-- User authentication persistence
-- File sharing capabilities
-- Message reactions and threads
-
-**Note**: This is a frontend prototype with simulated real-time functionality. All data is stored in-memory and resets on page refresh.
-
-*Project developed by Valentin Kitsonov and Dragomir Venkov*
